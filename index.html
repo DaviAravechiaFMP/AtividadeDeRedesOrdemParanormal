@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dossiê de Agentes – Ordem Paranormal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Archivo:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topo">
+  <h1>Dossiê de agentes</h1>
+  <div class="canal">
+    <label for="url">Servidor</label>
+    <input id="url" type="text" value="http://localhost:3000" spellcheck="false">
+    <label class="sim"><input id="sim" type="checkbox"> Modo simulado</label>
+  </div>
+</header>
+
+<main class="grade">
+  <section class="coluna">
+    <form id="ficha" class="papel">
+      <h2>Ficha do agente</h2>
+      <label>Nome do agente
+        <input id="nome" required maxlength="40" placeholder="Ex.: Arthur Cervero">
+      </label>
+      <div class="par">
+        <label>Classe
+          <select id="classe">
+            <option>Combatente</option><option>Especialista</option><option>Ocultista</option>
+          </select>
+        </label>
+        <label>Afinidade
+          <select id="afinidade">
+            <option>Sangue</option><option>Morte</option><option>Conhecimento</option><option>Energia</option>
+          </select>
+        </label>
+        <label>NEX (%)
+          <input id="nex" type="number" min="5" max="99" step="5" value="5">
+        </label>
+      </div>
+      <fieldset>
+        <legend>Atributos</legend>
+        <label>Agilidade <input id="agi" type="number" min="0" max="5" value="1"></label>
+        <label>Força <input id="for" type="number" min="0" max="5" value="1"></label>
+        <label>Intelecto <input id="int" type="number" min="0" max="5" value="1"></label>
+        <label>Presença <input id="pre" type="number" min="0" max="5" value="1"></label>
+        <label>Vigor <input id="vig" type="number" min="0" max="5" value="1"></label>
+      </fieldset>
+      <button type="submit" class="principal">Enviar ficha (POST)</button>
+    </form>
+
+    <div class="papel">
+      <div class="linha">
+        <h2>Agentes registrados</h2>
+        <button id="listar" type="button">Consultar (GET)</button>
+      </div>
+      <ul id="agentes"><li class="vazio">Nenhuma consulta feita ainda. Use “Consultar” para buscar no servidor.</li></ul>
+    </div>
+  </section>
+
+  <section class="coluna log">
+    <div class="rota" id="rota" aria-hidden="true">
+      <span>Navegador</span>
+      <div class="trilho"><i class="pacote"></i></div>
+      <span>Servidor</span>
+    </div>
+    <div class="linha">
+      <h2>Registro de comunicação</h2>
+      <button id="limpar" type="button" class="fantasma">Limpar</button>
+    </div>
+    <ol id="registro" aria-live="polite">
+      <li class="vazio">Nenhuma troca de mensagens ainda. Envie uma ficha ou consulte os agentes.</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const simulado = [];
+let contador = 0;
+
+const pretty = t => { try { return JSON.stringify(JSON.parse(t), null, 2); } catch { return t; } };
+
+function animar() {
+  const r = $('#rota');
+  r.classList.remove('ativa'); void r.offsetWidth; r.classList.add('ativa');
+}
+
+function registrar({ metodo, url, status, ms, enviado, recebido, erro }) {
+  const vazio = $('#registro .vazio'); if (vazio) vazio.remove();
+  const li = document.createElement('li');
+  const d = document.createElement('details');
+  const s = document.createElement('summary');
+  const classe = erro ? 'erro' : status < 300 ? 'ok' : status < 500 ? 'aviso' : 'erro';
+  s.innerHTML = `<b class="m ${metodo}">${metodo}</b> <span class="u"></span> <span class="st ${classe}"></span> <time></time>`;
+  s.querySelector('.u').textContent = url;
+  s.querySelector('.st').textContent = erro ? 'sem resposta' : status;
+  s.querySelector('time').textContent = `${new Date().toLocaleTimeString('pt-BR')} · ${ms} ms`;
+  d.append(s);
+  const bloco = (titulo, texto) => {
+    const h = document.createElement('h3'); h.textContent = titulo;
+    const p = document.createElement('pre'); p.textContent = texto;
+    d.append(h, p);
+  };
+  bloco('Enviado', `${metodo} ${url}\n` + (enviado ? `Content-Type: application/json\n\n${pretty(enviado)}` : '(sem corpo)'));
+  bloco('Recebido', erro ? erro : `HTTP ${status}\n\n${pretty(recebido) || '(sem corpo)'}`);
+  d.open = contador++ === 0;
+  li.append(d);
+  $('#registro').prepend(li);
+}
+
+async function chamar(metodo, caminho, corpo) {
+  const url = $('#url').value.trim().replace(/\/$/, '') + caminho;
+  const enviado = corpo ? JSON.stringify(corpo) : null;
+  const t0 = performance.now();
+  animar();
+  let resp = { status: 0, texto: '', erro: null };
+  if ($('#sim').checked) {
+    await new Promise(r => setTimeout(r, 300));
+    if (metodo === 'POST') { const a = { id: Date.now(), ...corpo }; simulado.push(a); resp = { status: 201, texto: JSON.stringify(a) }; }
+    else if (metodo === 'DELETE') { const i = simulado.findIndex(a => '/agentes/' + a.id === caminho); if (i >= 0) simulado.splice(i, 1); resp = { status: 204, texto: '' }; }
+    else resp = { status: 200, texto: JSON.stringify(simulado) };
+  } else {
+    try {
+      const r = await fetch(url, { method: metodo, headers: corpo ? { 'Content-Type': 'application/json' } : {}, body: enviado });
+      resp = { status: r.status, texto: await r.text() };
+    } catch (e) {
+      resp.erro = 'Falha de conexão: servidor desligado, endereço errado ou bloqueio de CORS.';
+    }
+  }
+  registrar({ metodo, url, status: resp.status, ms: Math.round(performance.now() - t0), enviado, recebido: resp.texto, erro: resp.erro });
+  return resp;
+}
+
+function mostrarAgentes(texto) {
+  const ul = $('#agentes'); ul.replaceChildren();
+  let lista; try { lista = JSON.parse(texto); } catch { lista = null; }
+  if (!Array.isArray(lista) || !lista.length) {
+    ul.innerHTML = '<li class="vazio"></li>';
+    ul.firstChild.textContent = Array.isArray(lista) ? 'O servidor não tem nenhum agente registrado.' : 'A resposta não é uma lista JSON. Veja os detalhes no registro.';
+    return;
+  }
+  for (const a of lista) {
+    const li = document.createElement('li');
+    const info = document.createElement('span');
+    info.textContent = `${a.nome ?? '(sem nome)'} — ${a.classe ?? '?'}, NEX ${a.nex ?? '?'}%, ${a.afinidade ?? '?'}`;
+    li.append(info);
+    if (a.id !== undefined) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'fantasma'; b.textContent = 'Remover (DELETE)';
+      b.onclick = async () => { await chamar('DELETE', '/agentes/' + a.id); $('#listar').click(); };
+      li.append(b);
+    }
+    ul.append(li);
+  }
+}
+
+$('#ficha').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = id => $('#' + id).value;
+  await chamar('POST', '/agentes', {
+    nome: v('nome'), classe: v('classe'), afinidade: v('afinidade'), nex: +v('nex'),
+    atributos: { agilidade: +v('agi'), forca: +v('for'), intelecto: +v('int'), presenca: +v('pre'), vigor: +v('vig') }
+  });
+});
+$('#listar').addEventListener('click', async () => { const r = await chamar('GET', '/agentes'); if (!r.erro) mostrarAgentes(r.texto); });
+$('#limpar').addEventListener('click', () => { $('#registro').innerHTML = '<li class="vazio">Registro limpo.</li>'; contador = 0; });
+</script>
+</body>
+</html>
